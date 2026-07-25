@@ -6,6 +6,7 @@ Dashboard comercial y profesional para visualización de proyectos y carta CITSU
 
 import os
 import zipfile
+from pathlib import Path
 import tempfile
 import re
 import unicodedata
@@ -31,20 +32,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-BASE_DIR = (
-    r"C:\Users\ovaldes\OneDrive - Subsecretaría de Evaluación Social"
-    r"\Escritorio\Python\APP_tesis\bases de datos"
-)
+APP_DIR = Path(__file__).resolve().parent
+BASE_DIR = APP_DIR / "data"
 
-ARCHIVO_PROYECTOS = os.path.join(
-    BASE_DIR,
-    "MDS_PROYECTOS 2024 2026.xlsx"
-)
-
-ARCHIVO_CITSU = os.path.join(
-    BASE_DIR,
-    "CITSU_Coquimbo_La_Serena_2da_Ed_2015.kmz"
-)
+ARCHIVO_PROYECTOS = BASE_DIR / "MDS_PROYECTOS 2024 2026.xlsx"
+ARCHIVO_CITSU = BASE_DIR / "CITSU_Coquimbo_La_Serena_2da_Ed_2015.kmz"
 
 
 # =========================================================
@@ -598,7 +590,7 @@ def formatear_costo(valor):
 
 @st.cache_data(show_spinner=False)
 def cargar_excel_proyectos(ruta_excel):
-    df = pd.read_excel(ruta_excel)
+    df = pd.read_excel(str(ruta_excel))
     df.columns = df.columns.astype(str).str.strip()
 
     if "GEOLOCALIZACIÓN" not in df.columns:
@@ -639,11 +631,11 @@ def cargar_excel_proyectos(ruta_excel):
 
 @st.cache_data(show_spinner=False)
 def cargar_kmz(ruta_kmz):
-    if not os.path.exists(ruta_kmz):
+    if not Path(ruta_kmz).exists():
         return None
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with zipfile.ZipFile(ruta_kmz, "r") as archivo_zip:
+        with zipfile.ZipFile(str(ruta_kmz), "r") as archivo_zip:
             archivo_zip.extractall(tmpdir)
 
         archivos_kml = []
@@ -1321,9 +1313,11 @@ def exportar_excel(df):
 # CARGA PRINCIPAL
 # =========================================================
 
-if not os.path.exists(ARCHIVO_PROYECTOS):
+if not ARCHIVO_PROYECTOS.exists():
     st.error(
-        f"No se encontró la base de proyectos:\n{ARCHIVO_PROYECTOS}"
+        "No se encontró la base de proyectos. "
+        "Agrega el archivo `MDS_PROYECTOS 2024 2026.xlsx` "
+        "dentro de la carpeta `data` del repositorio."
     )
     st.stop()
 
@@ -2497,8 +2491,3 @@ st.caption(
     "No reemplaza validación técnica, revisión de terreno ni pronunciamiento "
     "de organismos competentes."
 )
-
-
-
-
-
