@@ -590,7 +590,7 @@ def formatear_costo(valor):
 
 @st.cache_data(show_spinner=False)
 def cargar_excel_proyectos(ruta_excel):
-    df = pd.read_excel(str(ruta_excel))
+    df = pd.read_excel(ruta_excel, sheet_name="APP")
     df.columns = df.columns.astype(str).str.strip()
 
     if "GEOLOCALIZACIÓN" not in df.columns:
