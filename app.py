@@ -36,8 +36,33 @@ APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR / "data"
 
 ARCHIVO_PROYECTOS = BASE_DIR / "MDS_PROYECTOS 2024 2026.xlsx"
-ARCHIVO_CITSU = BASE_DIR / "CITSU_Coquimbo_La_Serena_2da_Ed_2015.kmz"
-
+ARCHIVOS_CITSU = [
+    BASE_DIR / "CITSU_Coquimbo_La_Serena_2da_Ed_2015.kmz",
+    BASE_DIR / "shoa-cl_descargas_citsu_kmz_CITSU_Guanaqueros_1ra Ed. 2019.kmz",
+    BASE_DIR / "shoa-cl_descargas_citsu_kmz_CITSU_Tongoy_1era_Ed_2019.kmz",
+    BASE_DIR / "CITSU_Los_Vilos_2da_Ed_2017.kmz",
+    BASE_DIR / "CITSU_Los_Molles-La_Ballena_1a_ed._2023.kmz",
+    BASE_DIR / "CITSU_Pichicuy-Longotoma_1a_ed._2023.kmz",
+    BASE_DIR / "CITSU_Papudo_2da_Ed_2017.kmz",
+    BASE_DIR / "CITSU_Zapallar-Cachagua-La_Laguna-Maitencillo_2da_Ed_2015.kmz",
+    BASE_DIR / "CITSU_Quintero-Ventana-Horcon_2da_Ed_2011.kmz",
+    BASE_DIR / "concon_ritoque_1ra_ed_2012.kmz",
+    BASE_DIR / "citsu_valparaiso_vinna.kmz",
+    BASE_DIR / "CITSU_Laguna_Verde_1ra_Ed_2017.kmz",
+    BASE_DIR / "CITSU_Quintay_1ra_Ed_2018.kmz",
+    BASE_DIR / "CITSU_Bahia_Cumberland_1ra_Ed_2013.kmz",
+    BASE_DIR / "Isla_de_Pascua_Hanga_Hotuiti_Ed_2006.kmz",
+    BASE_DIR / "Isla_de_Pascua_Hanga_La_Perouse_Ed_2006.kmz",
+    BASE_DIR / "CITSU_Algarrobo_3a_Ed_2023.kmz",
+    BASE_DIR / "CITSU_ElQuisco-IslaNegra-ElTabo1aEd.2023.kmz",
+    BASE_DIR / "CITSU_LasCruces-SanSebastián-Cartagena2aEd2023.kmz",
+    BASE_DIR / "CITSU_San_Antonio_3a_ed_2025.kmz",
+    BASE_DIR / "CITSU_Santo_Domingo_1a_ed_2025.kmz",
+    BASE_DIR / "CITSU_Constitucion_2da_Ed_2016.kmz",
+    BASE_DIR / "CITSU_Bahias_Concepcion_San Vicente_1ra_Ed2013.kmz",
+    BASE_DIR / "CITSU_Bahias_Concepcion_San Vicente_1ra_Ed2013 (1).kmz",
+    BASE_DIR / "San_Pedro_de_la_Paz.kmz",
+]
 
 # =========================================================
 # IDENTIDAD VISUAL
