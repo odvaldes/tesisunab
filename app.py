@@ -1356,12 +1356,66 @@ with st.spinner("Procesando proyectos y carta CITSU..."):
         st.stop()
 
     try:
-        gdf_citsu = cargar_kmz(
-            ARCHIVO_CITSU
-        )
+        capas_citsu = []
+        archivos_no_encontrados = []
+        archivos_con_error = []
+
+        for archivo_citsu in ARCHIVOS_CITSU:
+            if not archivo_citsu.exists():
+                archivos_no_encontrados.append(archivo_citsu.name)
+                continue
+
+            try:
+                gdf_temp = cargar_kmz(archivo_citsu)
+
+                if gdf_temp is not None and not gdf_temp.empty:
+                    gdf_temp = gdf_temp.copy()
+                    gdf_temp["ARCHIVO_CITSU"] = archivo_citsu.name
+                    capas_citsu.append(gdf_temp)
+                else:
+                    archivos_con_error.append(
+                        f"{archivo_citsu.name}: sin geometrías KML válidas"
+                    )
+
+            except Exception as error_archivo:
+                archivos_con_error.append(
+                    f"{archivo_citsu.name}: {error_archivo}"
+                )
+
+        if capas_citsu:
+            gdf_citsu = gpd.GeoDataFrame(
+                pd.concat(capas_citsu, ignore_index=True),
+                geometry="geometry",
+                crs="EPSG:4326"
+            )
+
+            st.success(
+                f"Cartas CITSU cargadas: "
+                f"{len(capas_citsu)} de {len(ARCHIVOS_CITSU)}"
+            )
+        else:
+            gdf_citsu = None
+            st.warning(
+                "No fue posible cargar ninguna carta CITSU."
+            )
+
+        if archivos_no_encontrados:
+            with st.expander(
+                f"Archivos CITSU no encontrados ({len(archivos_no_encontrados)})"
+            ):
+                for nombre in archivos_no_encontrados:
+                    st.write(f"• {nombre}")
+
+        if archivos_con_error:
+            with st.expander(
+                f"Archivos CITSU con error ({len(archivos_con_error)})"
+            ):
+                for detalle in archivos_con_error:
+                    st.write(f"• {detalle}")
+
     except Exception as error:
         st.warning(
-            f"No fue posible cargar la carta CITSU: {error}"
+            f"No fue posible cargar las cartas CITSU: {error}"
         )
         gdf_citsu = None
 
