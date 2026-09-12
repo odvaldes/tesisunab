@@ -1,4 +1,3 @@
-
 """
 GeoRiskAI Sentinel
 Dashboard comercial y profesional para visualización de proyectos y carta CITSU.
@@ -825,10 +824,14 @@ CONFIG_IR = {
         "Muy Alto": 0.77,
         "Alto": 0.55,
         "Medio": 0.30,
+        "Bajo": 0.00,
         "Muy Bajo": 0.00
     },
     "perdida_esperada": {
-        "Muy Bajo": (0.00, 0.20),
+        # Fuera de CITSU: amenaza tsunami nula en este modelo.
+        "Muy Bajo": (0.00, 0.00),
+        # Dentro de CITSU con IR < 0.30: existe exposición, por eso se distingue como Bajo.
+        "Bajo": (0.00, 0.20),
         "Medio": (0.20, 0.40),
         "Alto": (0.40, 0.80),
         "Muy Alto": (0.80, 1.00)
@@ -845,25 +848,37 @@ def normalizar_texto(valor):
     return texto.lower().strip()
 
 
-def puntaje_amenaza_desde_citsu(categoria):
+def puntaje_amenaza_desde_citsu(categoria, en_citsu=None):
     """
-    Convierte la categoría o descripción CITSU en el puntaje de amenaza.
+    Convierte la categoría o descripción CITSU en puntaje de amenaza.
 
-    Muy bajo:  altura 0   -> 0.00
-    Bajo:      0 a 1 m    -> 0.10
-    Medio:     1 a 2 m    -> 0.56
-    Alto:      2 a 4 m    -> 0.84
-    Muy alto:  más de 4 m -> 1.00
-    Fuera CITSU            -> 0.00
+    Muy bajo:  altura 0    -> 0.00
+    Bajo:      0 a 1 m     -> 0.10
+    Medio:     1 a 2 m     -> 0.56
+    Alto:      2 a 4 m     -> 0.84
+    Muy alto:  más de 4 m  -> 1.00
+    Fuera CITSU             -> 0.00
+
+    Regla adicional:
+    - Si el proyecto intersecta una geometría CITSU pero la etiqueta del KMZ
+      no permite identificar una banda de altura, se asigna amenaza Bajo (0.10)
+      como mínimo, para no confundir una ubicación dentro de CITSU con una
+      ubicación fuera de CITSU.
     """
     texto = normalizar_texto(categoria)
 
+    # La condición espacial manda: fuera de CITSU = amenaza 0.
+    if en_citsu is False or "fuera citsu" in texto:
+        return CONFIG_IR["escalas_amenaza"]["Muy bajo"], "Muy bajo"
+
     if (
-        "fuera" in texto
-        or "sin informacion" in texto
-        or "muy bajo" in texto
-        or texto in {"0", "0.0", "0,0"}
+        "sin informacion" in texto
+        or "sin categoría" in texto
+        or "sin categoria" in texto
+        or texto in {"", "nan", "none", "<na>"}
     ):
+        if en_citsu:
+            return CONFIG_IR["escalas_amenaza"]["Bajo"], "Bajo"
         return CONFIG_IR["escalas_amenaza"]["Muy bajo"], "Muy bajo"
 
     if "muy alto" in texto or ">4" in texto or "mas de 4" in texto:
@@ -878,23 +893,35 @@ def puntaje_amenaza_desde_citsu(categoria):
     if "bajo" in texto or "0 - 1" in texto or "0-1" in texto:
         return CONFIG_IR["escalas_amenaza"]["Bajo"], "Bajo"
 
-    # Reconocimiento adicional de valores numéricos contenidos en la categoría
-    numeros = re.findall(r"\d+(?:[.,]\d+)?", texto)
-    numeros = [float(numero.replace(",", ".")) for numero in numeros]
+    if "muy bajo" in texto or texto in {"0", "0.0", "0,0"}:
+        # Si está dentro de CITSU, 0 m explícito puede mantenerse en 0.
+        return CONFIG_IR["escalas_amenaza"]["Muy bajo"], "Muy bajo"
+
+    # Reconocimiento numérico restringido a expresiones de altura/rango.
+    # Evita interpretar años de edición (2019, 2023, etc.) como altura de tsunami.
+    patrones_altura = re.findall(
+        r"(?:altura|m|metro|metros)?\s*(\d+(?:[.,]\d+)?)\s*(?:m|metro|metros)?",
+        texto
+    )
+    numeros = [float(x.replace(",", ".")) for x in patrones_altura]
+    numeros = [x for x in numeros if 0 <= x <= 20]
 
     if numeros:
         altura_maxima = max(numeros)
-
         if altura_maxima > 4:
             return CONFIG_IR["escalas_amenaza"]["Muy alto"], "Muy alto"
         if altura_maxima > 2:
             return CONFIG_IR["escalas_amenaza"]["Alto"], "Alto"
         if altura_maxima > 1:
             return CONFIG_IR["escalas_amenaza"]["Medio"], "Medio"
-        if altura_maxima >= 0:
+        if altura_maxima > 0:
             return CONFIG_IR["escalas_amenaza"]["Bajo"], "Bajo"
 
-    return 0.00, "Sin información"
+    # Si hay intersección con CITSU, nunca se trata como fuera de amenaza.
+    if en_citsu:
+        return CONFIG_IR["escalas_amenaza"]["Bajo"], "Bajo"
+
+    return CONFIG_IR["escalas_amenaza"]["Muy bajo"], "Muy bajo"
 
 
 
@@ -991,7 +1018,8 @@ def incorporar_indice_riesgo_todos(gdf):
         calculo = calcular_indice_riesgo(
             fila.get("CATEGORIA_CITSU", "SIN INFORMACIÓN"),
             materialidad,
-            anio_construccion
+            anio_construccion,
+            en_citsu=bool(fila.get("EN_CITSU", False))
         )
 
         registros.append(
@@ -1124,31 +1152,33 @@ def puntaje_antiguedad(anio_construccion):
     return CONFIG_IR["escalas_materialidad"]["Bajo"], "Bajo"
 
 
-def clasificar_indice_riesgo(indice):
+def clasificar_indice_riesgo(indice, en_citsu=False):
     """
-    Clasifica el Índice de Riesgo mediante los umbrales
-    centralizados en CONFIG_IR.
+    Clasifica el Índice de Riesgo.
 
     Muy Alto : IR >= 0.77
     Alto     : 0.55 <= IR < 0.77
     Medio    : 0.30 <= IR < 0.55
-    Muy Bajo : IR < 0.30
+    Bajo     : IR < 0.30, pero el proyecto está dentro de CITSU
+    Muy Bajo : proyecto fuera de CITSU (IR = 0 en el modelo tsunami)
     """
     if indice is None or pd.isna(indice):
         return "Sin información"
+
+    if not en_citsu:
+        return "Muy Bajo"
 
     umbrales = CONFIG_IR["umbrales"]
 
     if indice >= umbrales["Muy Alto"]:
         return "Muy Alto"
-
     if indice >= umbrales["Alto"]:
         return "Alto"
-
     if indice >= umbrales["Medio"]:
         return "Medio"
 
-    return "Muy Bajo"
+    return "Bajo"
+
 
 
 def obtener_rango_perdida_esperada(nivel_riesgo):
@@ -1245,19 +1275,16 @@ def calcular_perdida_monetaria(costo, nivel_riesgo):
 def calcular_indice_riesgo(
     categoria_citsu,
     materialidad,
-    anio_construccion
+    anio_construccion,
+    en_citsu=False
 ):
     puntaje_amenaza, escala_amenaza = puntaje_amenaza_desde_citsu(
-        categoria_citsu
+        categoria_citsu,
+        en_citsu=en_citsu
     )
 
-    puntaje_mat, escala_materialidad = puntaje_materialidad(
-        materialidad
-    )
-
-    puntaje_ant, escala_antiguedad = puntaje_antiguedad(
-        anio_construccion
-    )
+    puntaje_mat, escala_materialidad = puntaje_materialidad(materialidad)
+    puntaje_ant, escala_antiguedad = puntaje_antiguedad(anio_construccion)
 
     if puntaje_mat is None or puntaje_ant is None:
         return {
@@ -1278,14 +1305,17 @@ def calcular_indice_riesgo(
         puntaje_mat * ponderaciones["materialidad"]
         + puntaje_ant * ponderaciones["antiguedad"]
     )
-
-    indice_riesgo = (
-        puntaje_amenaza * ponderaciones["amenaza"]
-        + indice_vulnerabilidad * ponderaciones["vulnerabilidad"]
-    )
-
-    indice_riesgo = round(indice_riesgo, 3)
     indice_vulnerabilidad = round(indice_vulnerabilidad, 3)
+
+    # Regla de exposición: fuera de CITSU no existe riesgo tsunami en este modelo.
+    if not en_citsu:
+        indice_riesgo = 0.0
+    else:
+        indice_riesgo = (
+            puntaje_amenaza * ponderaciones["amenaza"]
+            + indice_vulnerabilidad * ponderaciones["vulnerabilidad"]
+        )
+        indice_riesgo = round(indice_riesgo, 3)
 
     return {
         "puntaje_amenaza": puntaje_amenaza,
@@ -1296,8 +1326,12 @@ def calcular_indice_riesgo(
         "escala_antiguedad": escala_antiguedad,
         "indice_vulnerabilidad": indice_vulnerabilidad,
         "indice_riesgo": indice_riesgo,
-        "nivel_riesgo": clasificar_indice_riesgo(indice_riesgo)
+        "nivel_riesgo": clasificar_indice_riesgo(
+            indice_riesgo,
+            en_citsu=en_citsu
+        )
     }
+
 
 
 def color_nivel_riesgo(nivel):
@@ -1311,6 +1345,9 @@ def color_nivel_riesgo(nivel):
 
     if texto == "medio":
         return "#F39B36"
+
+    if texto == "bajo":
+        return "#E7B84B"
 
     if texto == "muy bajo":
         return "#2E9B6F"
@@ -2390,10 +2427,14 @@ with st.expander("Ver cálculo y ponderaciones del Índice de Riesgo"):
                 )
             },
             {
-                "Nivel": "Muy Bajo",
+                "Nivel": "Bajo",
                 "Condición": (
-                    f"IR < {CONFIG_IR['umbrales']['Medio']:.2f}"
+                    f"IR < {CONFIG_IR['umbrales']['Medio']:.2f} y dentro de CITSU"
                 )
+            },
+            {
+                "Nivel": "Muy Bajo",
+                "Condición": "Fuera de CITSU (IR = 0.00)"
             }
         ]
     )
@@ -2425,8 +2466,8 @@ with st.expander("Ver cálculo y ponderaciones del Índice de Riesgo"):
     )
 
     st.caption(
-        f"Umbrales implementados: Muy Bajo < "
-        f"{CONFIG_IR['umbrales']['Medio']:.2f}; Medio ≥ "
+        f"Umbrales implementados: Fuera de CITSU = Muy Bajo (IR 0.00); "
+        f"dentro de CITSU con IR < {CONFIG_IR['umbrales']['Medio']:.2f} = Bajo; Medio ≥ "
         f"{CONFIG_IR['umbrales']['Medio']:.2f}; Alto ≥ "
         f"{CONFIG_IR['umbrales']['Alto']:.2f}; Muy Alto ≥ "
         f"{CONFIG_IR['umbrales']['Muy Alto']:.2f}."
