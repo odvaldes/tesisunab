@@ -1,3 +1,4 @@
+
 """
 GeoRiskAI Sentinel
 Dashboard comercial y profesional para visualización de proyectos y carta CITSU.
@@ -12,6 +13,7 @@ import unicodedata
 import html
 import textwrap
 from io import BytesIO
+from shapely.geometry import box
 
 import pandas as pd
 import geopandas as gpd
@@ -713,45 +715,97 @@ def clasificar_citsu(gdf_proyectos, gdf_citsu):
 
     if gdf_citsu is None:
         resultado["EN_CITSU"] = False
-        resultado["CATEGORIA_CITSU"] = "SIN INFORMACIÓN"
+        resultado["CATEGORIA_CITSU"] = "FUERA CITSU"
+        resultado["ARCHIVO_CITSU"] = None
         return resultado
 
-    campo_categoria = detectar_campo_categoria_citsu(
-        gdf_citsu
-    )
-
+    campo_categoria = detectar_campo_categoria_citsu(gdf_citsu)
     capa = gdf_citsu.copy()
 
     if campo_categoria is None:
         capa["CATEGORIA_TEMP"] = "ZONA CITSU"
         campo_categoria = "CATEGORIA_TEMP"
 
+    columnas_cruce = [campo_categoria, "geometry"]
+    if "ARCHIVO_CITSU" in capa.columns and campo_categoria != "ARCHIVO_CITSU":
+        columnas_cruce.insert(1, "ARCHIVO_CITSU")
+
     cruce = gpd.sjoin(
         resultado,
-        capa[[campo_categoria, "geometry"]],
+        capa[columnas_cruce],
         how="left",
         predicate="intersects"
     )
 
     cruce["EN_CITSU"] = cruce["index_right"].notna()
-
     cruce["CATEGORIA_CITSU"] = (
         cruce[campo_categoria]
         .astype("string")
         .fillna("FUERA CITSU")
     )
 
+    if "ARCHIVO_CITSU" not in cruce.columns:
+        cruce["ARCHIVO_CITSU"] = None
+
     cruce = cruce.drop(
         columns=["index_right", campo_categoria],
         errors="ignore"
     )
 
+    # Un proyecto puede tocar más de un polígono. Se conserva una sola fila.
     cruce = cruce[
         ~cruce.index.duplicated(keep="first")
     ].copy()
 
     return cruce
 
+
+def preparar_citsu_para_mapa(gdf_citsu, proyecto, margen_grados=0.12):
+    """
+    Devuelve solo la cartografía CITSU necesaria para visualizar el proyecto.
+    El GeoDataFrame completo se mantiene para el análisis espacial; esta
+    reducción se usa exclusivamente para acelerar Folium.
+    """
+    if gdf_citsu is None or gdf_citsu.empty:
+        return None
+
+    # Si el proyecto intersecta una carta, mostrar únicamente esa carta.
+    archivo_origen = proyecto.get("ARCHIVO_CITSU", None)
+    if archivo_origen is not None and not pd.isna(archivo_origen):
+        archivo_origen = str(archivo_origen).strip()
+        if archivo_origen:
+            local = gdf_citsu[
+                gdf_citsu["ARCHIVO_CITSU"].astype(str) == archivo_origen
+            ].copy()
+            if not local.empty:
+                local["geometry"] = local.geometry.simplify(
+                    0.00008, preserve_topology=True
+                )
+                return local
+
+    # Si está fuera de CITSU, buscar solo geometrías próximas al proyecto.
+    x = float(proyecto.geometry.x)
+    y = float(proyecto.geometry.y)
+    ventana = box(
+        x - margen_grados,
+        y - margen_grados,
+        x + margen_grados,
+        y + margen_grados
+    )
+
+    try:
+        indices = gdf_citsu.sindex.query(ventana, predicate="intersects")
+        local = gdf_citsu.iloc[list(indices)].copy()
+    except Exception:
+        local = gdf_citsu[gdf_citsu.intersects(ventana)].copy()
+
+    if local.empty:
+        return local
+
+    local["geometry"] = local.geometry.simplify(
+        0.00008, preserve_topology=True
+    )
+    return local
 
 def color_categoria(categoria):
     texto = str(categoria).lower()
@@ -1371,6 +1425,61 @@ def exportar_excel(df):
     return output.getvalue()
 
 
+@st.cache_data(show_spinner=False)
+def preparar_datos_aplicacion(ruta_excel_str, archivos_kmz_info):
+    """
+    Carga, consolida y cruza todos los datos una sola vez.
+    archivos_kmz_info es una tupla de (ruta, fecha_modificacion) para que
+    Streamlit invalide el caché si cambia algún archivo.
+    """
+    gdf_proyectos_local = cargar_excel_proyectos(Path(ruta_excel_str))
+
+    capas_citsu_local = []
+    no_encontrados = []
+    con_error = []
+
+    for ruta_str, _mtime in archivos_kmz_info:
+        archivo = Path(ruta_str)
+        if not archivo.exists():
+            no_encontrados.append(archivo.name)
+            continue
+
+        try:
+            gdf_temp = cargar_kmz(archivo)
+            if gdf_temp is not None and not gdf_temp.empty:
+                gdf_temp = gdf_temp.copy()
+                gdf_temp["ARCHIVO_CITSU"] = archivo.name
+                capas_citsu_local.append(gdf_temp)
+            else:
+                con_error.append(f"{archivo.name}: sin geometrías KML válidas")
+        except Exception as exc:
+            con_error.append(f"{archivo.name}: {exc}")
+
+    if capas_citsu_local:
+        gdf_citsu_local = gpd.GeoDataFrame(
+            pd.concat(capas_citsu_local, ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326"
+        )
+    else:
+        gdf_citsu_local = None
+
+    resultado_local = clasificar_citsu(
+        gdf_proyectos_local,
+        gdf_citsu_local
+    )
+    resultado_local = incorporar_indice_riesgo_todos(resultado_local)
+
+    return (
+        gdf_proyectos_local,
+        gdf_citsu_local,
+        resultado_local,
+        no_encontrados,
+        con_error,
+        len(capas_citsu_local)
+    )
+
+
 # =========================================================
 # CARGA PRINCIPAL
 # =========================================================
@@ -1383,88 +1492,52 @@ if not ARCHIVO_PROYECTOS.exists():
     )
     st.stop()
 
-with st.spinner("Procesando proyectos y carta CITSU..."):
+with st.spinner("Procesando proyectos y cartas CITSU..."):
     try:
-        gdf_proyectos = cargar_excel_proyectos(
-            ARCHIVO_PROYECTOS
+        archivos_kmz_info = tuple(
+            (
+                str(ruta),
+                ruta.stat().st_mtime if ruta.exists() else None
+            )
+            for ruta in ARCHIVOS_CITSU
         )
+
+        (
+            gdf_proyectos,
+            gdf_citsu,
+            gdf_resultado,
+            archivos_no_encontrados,
+            archivos_con_error,
+            cantidad_citsu_cargadas
+        ) = preparar_datos_aplicacion(
+            str(ARCHIVO_PROYECTOS),
+            archivos_kmz_info
+        )
+
     except Exception as error:
-        st.error(f"Error al leer la base de proyectos: {error}")
+        st.error(f"Error al preparar los datos: {error}")
         st.stop()
 
-    try:
-        capas_citsu = []
-        archivos_no_encontrados = []
-        archivos_con_error = []
-
-        for archivo_citsu in ARCHIVOS_CITSU:
-            if not archivo_citsu.exists():
-                archivos_no_encontrados.append(archivo_citsu.name)
-                continue
-
-            try:
-                gdf_temp = cargar_kmz(archivo_citsu)
-
-                if gdf_temp is not None and not gdf_temp.empty:
-                    gdf_temp = gdf_temp.copy()
-                    gdf_temp["ARCHIVO_CITSU"] = archivo_citsu.name
-                    capas_citsu.append(gdf_temp)
-                else:
-                    archivos_con_error.append(
-                        f"{archivo_citsu.name}: sin geometrías KML válidas"
-                    )
-
-            except Exception as error_archivo:
-                archivos_con_error.append(
-                    f"{archivo_citsu.name}: {error_archivo}"
-                )
-
-        if capas_citsu:
-            gdf_citsu = gpd.GeoDataFrame(
-                pd.concat(capas_citsu, ignore_index=True),
-                geometry="geometry",
-                crs="EPSG:4326"
-            )
-
-            st.success(
-                f"Cartas CITSU cargadas: "
-                f"{len(capas_citsu)} de {len(ARCHIVOS_CITSU)}"
-            )
-        else:
-            gdf_citsu = None
-            st.warning(
-                "No fue posible cargar ninguna carta CITSU."
-            )
-
-        if archivos_no_encontrados:
-            with st.expander(
-                f"Archivos CITSU no encontrados ({len(archivos_no_encontrados)})"
-            ):
-                for nombre in archivos_no_encontrados:
-                    st.write(f"• {nombre}")
-
-        if archivos_con_error:
-            with st.expander(
-                f"Archivos CITSU con error ({len(archivos_con_error)})"
-            ):
-                for detalle in archivos_con_error:
-                    st.write(f"• {detalle}")
-
-    except Exception as error:
-        st.warning(
-            f"No fue posible cargar las cartas CITSU: {error}"
-        )
-        gdf_citsu = None
-
-    gdf_resultado = clasificar_citsu(
-        gdf_proyectos,
-        gdf_citsu
+if cantidad_citsu_cargadas > 0:
+    st.caption(
+        f"Cartas CITSU disponibles: {cantidad_citsu_cargadas} de {len(ARCHIVOS_CITSU)}"
     )
+else:
+    st.warning("No fue posible cargar ninguna carta CITSU.")
 
-    gdf_resultado = incorporar_indice_riesgo_todos(
-        gdf_resultado
-    )
+if archivos_no_encontrados:
+    with st.expander(
+        f"Archivos CITSU no encontrados ({len(archivos_no_encontrados)})"
+    ):
+        for nombre in archivos_no_encontrados:
+            st.write(f"• {nombre}")
 
+if archivos_con_error:
+    with st.expander(
+        f"Archivos CITSU con error ({len(archivos_con_error)})"
+    ):
+        for detalle in archivos_con_error:
+            st.write(f"• {detalle}")
 
 nombre_col = (
     "NOMBRE INICIATIVA"
@@ -1990,10 +2063,15 @@ with col_mapa:
         control=True
     ).add_to(mapa)
 
-    if gdf_citsu is not None:
+    gdf_citsu_mapa = preparar_citsu_para_mapa(
+        gdf_citsu,
+        proyecto
+    )
+
+    if gdf_citsu_mapa is not None and not gdf_citsu_mapa.empty:
         folium.GeoJson(
-            gdf_citsu,
-            name="Carta CITSU",
+            gdf_citsu_mapa,
+            name="Carta CITSU local",
             style_function=lambda feature: {
                 "fillColor": "#F26A3D",
                 "color": "#C53A32",
