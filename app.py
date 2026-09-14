@@ -2526,13 +2526,13 @@ with st.expander("Ver cálculo y ponderaciones del Índice de Riesgo"):
     st.latex(
         r"""
         IR =
-        0.70 \times A
+        0.667 \times A
         +
-        0.30 \times
+        0.333 \times
         \left(
-        0.70 \times M
+        0.75 \times M
         +
-        0.30 \times N
+        0.25 \times N
         \right)
         """
     )
