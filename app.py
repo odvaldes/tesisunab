@@ -2690,7 +2690,12 @@ st.caption(
     "de organismos competentes."
 )
 
-st.caption(
-    "
-    Elaborado por Orietta Valdés R."
+st.markdown(
+    """
+    <hr style="margin-top: 2rem; margin-bottom: 0.75rem;">
+    <div style="text-align:center; color:#6b7280; font-size:0.9rem;">
+      © Orietta Valdés Rojas
+    </div>
+    """,
+    unsafe_allow_html=True
 )
