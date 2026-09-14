@@ -2694,7 +2694,7 @@ st.markdown(
     """
     <hr style="margin-top: 2rem; margin-bottom: 0.75rem;">
     <div style="text-align:center; color:#6b7280; font-size:0.9rem;">
-      © Orietta Valdés Rojas
+      © Elaborado por Orietta Valdés Rojas - Tesis UNAB
     </div>
     """,
     unsafe_allow_html=True
