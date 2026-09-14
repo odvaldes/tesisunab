@@ -875,9 +875,9 @@ CONFIG_IR = {
         "Bajo": 0.22
     },
     "umbrales": {
-        "Muy Alto": 0.77,
-        "Alto": 0.55,
-        "Medio": 0.30,
+        "Muy Alto": 0.74,
+        "Alto": 0.63,
+        "Medio": 0.40,
         "Bajo": 0.00,
         "Muy Bajo": 0.00
     },
