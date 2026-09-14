@@ -2450,7 +2450,7 @@ with st.expander("Ver cálculo y ponderaciones del Índice de Riesgo"):
             {
                 "Factor": "Amenaza",
                 "Subfactor": "Altura de inundación",
-                "Ponderación factor": "70%",
+                "Ponderación factor": "66,7%",
                 "Ponderación subfactor": "100%",
                 "Escala": resultado_indice["escala_amenaza"],
                 "Puntaje": resultado_indice["puntaje_amenaza"]
@@ -2458,16 +2458,16 @@ with st.expander("Ver cálculo y ponderaciones del Índice de Riesgo"):
             {
                 "Factor": "Vulnerabilidad física",
                 "Subfactor": "Materialidad",
-                "Ponderación factor": "30%",
-                "Ponderación subfactor": "70%",
+                "Ponderación factor": "33,3%",
+                "Ponderación subfactor": "75%",
                 "Escala": resultado_indice["escala_materialidad"],
                 "Puntaje": resultado_indice["puntaje_materialidad"]
             },
             {
                 "Factor": "Vulnerabilidad física",
                 "Subfactor": "Antigüedad normativa",
-                "Ponderación factor": "30%",
-                "Ponderación subfactor": "30%",
+                "Ponderación factor": "33,3%",
+                "Ponderación subfactor": "25%",
                 "Escala": resultado_indice["escala_antiguedad"],
                 "Puntaje": resultado_indice["puntaje_antiguedad"]
             }
