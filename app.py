@@ -2689,3 +2689,8 @@ st.caption(
     "No reemplaza validación técnica, revisión de terreno ni pronunciamiento "
     "de organismos competentes."
 )
+
+st.caption(
+    "
+    Elaborado por Orietta Valdés R."
+)
