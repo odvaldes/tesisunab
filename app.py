@@ -853,10 +853,10 @@ def color_folium(categoria):
 
 CONFIG_IR = {
     "ponderaciones": {
-        "amenaza": 0.70,
-        "vulnerabilidad": 0.30,
-        "materialidad": 0.70,
-        "antiguedad": 0.30
+        "amenaza": 0.667,
+        "vulnerabilidad": 0.333,
+        "materialidad": 0.75,
+        "antiguedad": 0.25
     },
     "escalas_amenaza": {
         "Muy bajo": 0.00,
@@ -1210,10 +1210,10 @@ def clasificar_indice_riesgo(indice, en_citsu=False):
     """
     Clasifica el Índice de Riesgo.
 
-    Muy Alto : IR >= 0.77
-    Alto     : 0.55 <= IR < 0.77
-    Medio    : 0.30 <= IR < 0.55
-    Bajo     : IR < 0.30, pero el proyecto está dentro de CITSU
+    Muy Alto : IR >= 0.74
+    Alto     : 0.74 <= IR < 0.63
+    Medio    : 0.40 <= IR < 0.63
+    Bajo     : IR < 0.40, pero el proyecto está dentro de CITSU
     Muy Bajo : proyecto fuera de CITSU (IR = 0 en el modelo tsunami)
     """
     if indice is None or pd.isna(indice):
